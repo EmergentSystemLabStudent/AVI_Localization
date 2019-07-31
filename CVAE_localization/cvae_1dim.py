@@ -2,16 +2,14 @@ import torch
 
 import torch
 import torch.utils.data
+import torch.distributions as dist
 from torch import nn, optim
 from torch.nn import functional as F
 from torchvision import datasets, transforms
 from torchvision.utils import save_image
 from tensorboardX import SummaryWriter
 import numpy as np
-
 from tqdm import tqdm
-
-
 from pixyz.distributions import Normal, Bernoulli
 from pixyz.losses import KullbackLeibler
 from pixyz.models import VAE
@@ -25,6 +23,28 @@ torch.manual_seed(seed)
 o_dim = 1
 c_dim = 1
 s_dim = 1
+
+sample_c1=torch.ones(2000)*-1.0
+sample_c2=torch.ones(2000)*3.0
+sample_c3=torch.ones(2000)*5.0
+sample_c=torch.cat([sample_c1,sample_c2,sample_c3],dim=0)
+sample_s=dist.Normal(sample_c,0.5).sample()
+sample_o=dist.Normal(sample_s,0.5).sample()
+
+train_c=sample_c
+train_s=sample_s
+train_o=sample_o
+
+test_c=sample_c
+test_s=sample_s
+test_o=sample_o
+
+kwargs = {'batch_size': batch_size, 'num_workers': 1, 'pin_memory': True}
+
+train = torch.utils.data.TensorDataset(train_o, train_c)
+train_loader = torch.utils.data.DataLoader(train, shuffle=False, **kwargs)
+test = torch.utils.data.TensorDataset(test_o, test_c)
+test_loader = torch.utils.data.DataLoader(test, shuffle=False, **kwargs)
 
 class Inference(Normal):
     def __init__(self):
@@ -74,7 +94,6 @@ def test(epoch):
     test_loss = test_loss * test_loader.batch_size / len(tc)
     print('Test loss: {:.4f}'.format(test_loss))
     return test_loss
-
     
 if __name__ == '__main__':
     p = Generator()
@@ -90,4 +109,12 @@ if __name__ == '__main__':
     print(kl)
     model = VAE(q, p, regularizer=kl, optimizer=optim.Adam, optimizer_params={"lr":1e-3})
     print(model)
-    
+
+    plot_number = 1
+    writer = SummaryWriter()
+    for epoch in range(1, epochs + 1):
+        train_loss = train(epoch)
+        test_loss = test(epoch)
+        writer.add_scalar('train_loss', train_loss.item(), epoch)
+        writer.add_scalar('test_loss', test_loss.item(), epoch)
+    writer.close()
